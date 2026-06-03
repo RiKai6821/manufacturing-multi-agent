@@ -87,6 +87,22 @@ def _role(m):
     return m["role"] if isinstance(m, dict) else getattr(m, "role", None)
 
 
+def _detect_equipment(text: str):
+    """从用户输入识别设备号，兼容 EQP-02 / EQP02 / 2号机 / 02设备 / 设备2 等写法。
+    归一化为 EQP-0X，且必须在有效设备列表内才返回（否则 None）。
+    用于记忆召回与事后防幻觉校验——识别得越全，安全网越不容易漏。"""
+    up = text.upper()
+    m = (re.search(r"EQP[-\s]?0*(\d{1,2})", up)        # EQP-02 / EQP02 / EQP 2
+         or re.search(r"0*(\d{1,2})\s*号", text)        # 3号机台 / 2号刻蚀机
+         or re.search(r"0*(\d{1,2})\s*设备", text)       # 02设备
+         or re.search(r"设备\s*0*(\d{1,2})", text))      # 设备2
+    if m:
+        eid = f"EQP-{int(m.group(1)):02d}"
+        if eid in settings.valid_equipment:
+            return eid
+    return None
+
+
 def _compress_history(messages):
     """保留 system + 首条user + 最近N轮交互，中间过长部分用摘要替换。
     协调者通常3~5轮就结束，这里是安全兜底，应对扩展为多轮交互的场景。
@@ -325,13 +341,11 @@ def interactive_session():
         if user_input.lower() in ("quit", "exit", "q"):
             print("会话结束。")
             break
-        # 解析设备号（取第一个 EQP-xx）
-        import re
-        m = re.search(r"EQP-\d+", user_input.upper())
-        if not m:
-            print("请在问题中包含设备编号（如 EQP-03）。")
+        # 解析设备号（兼容 EQP-03 / 3号机 / 03设备 等写法）
+        equipment_id = _detect_equipment(user_input)
+        if not equipment_id:
+            print("请在问题中包含设备编号（如 EQP-03 / 3号机）。")
             continue
-        equipment_id = m.group()
         diagnose(user_input, equipment_id, session_memory=sess)
 
 
@@ -371,8 +385,8 @@ def chat_session():
             break
 
         # 检测设备号：仅在真正做诊断时用于记忆召回 + 事后校验（闲聊不受影响）
-        m = re.search(r"EQP-\d+", user_input.upper())
-        equipment_id = m.group() if m else None
+        # 兼容"02设备/2号机/EQP02"等写法，避免安全网因措辞不同而漏过
+        equipment_id = _detect_equipment(user_input)
 
         # 提到具体设备时，把历史经验作为参考补进本轮用户消息（不强制模型采用）
         content = user_input

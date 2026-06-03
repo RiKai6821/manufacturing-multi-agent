@@ -174,7 +174,7 @@ def query_process_parameters(equipment_id: str) -> str:
     if not rows:
         return f"未查到设备 {equipment_id} 的工艺参数。"
 
-    lines = [f"设备 {equipment_id} 最新工艺参数："]
+    lines = [f"设备 {equipment_id} 工艺参数（每项均为最新一次单点读数，非历史多组）："]
     abnormal = []
     for pname, val, lo, hi, in_spec, date in rows:
         if not in_spec:
@@ -184,7 +184,7 @@ def query_process_parameters(equipment_id: str) -> str:
             abnormal.append(f"{pname}={val}（上限{hi}）")
         else:
             tag = "正常"
-        lines.append(f"  {pname}: {val}（规格 {lo}~{hi}）→ {tag}")
+        lines.append(f"  {pname}: {val}（规格 {lo}~{hi}，测量日期 {date}）→ {tag}")
 
     if abnormal:
         lines.append(f"\n  ⚠️ 超标参数汇总：{'；'.join(abnormal)}")
