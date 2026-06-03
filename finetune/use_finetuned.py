@@ -26,7 +26,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 client = OpenAI(api_key=os.getenv("DASHSCOPE_API_KEY"),
                 base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
 
-BASE_MODEL = settings.chat_model   # 统一走 settings（flash）
+BASE_MODEL = settings.chat_model   # 统一走 settings（基础模型 qwen-plus）
 # ↓↓↓ 微调完成后，把这里换成你的微调模型ID（形如 qwen-plus-ft-xxxxxxxx）↓↓↓
 FINETUNED_MODEL = None   # None 表示尚未微调，只跑基础模型
 

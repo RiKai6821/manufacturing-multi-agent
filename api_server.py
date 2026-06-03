@@ -24,13 +24,15 @@ from logger_config import get_logger
 sys.path.append(os.path.join(os.path.dirname(__file__), "agents"))
 sys.path.append(os.path.join(os.path.dirname(__file__), "tools"))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
 from typing import Optional
 
 import db_tools
 import action_tools
 from main import diagnose
+import vision_agent      # 多模态：看故障照片
+import toolsmith         # 动态工具：理解需求→设计只读查询工具→执行
 
 logger = get_logger(__name__)
 
@@ -61,6 +63,11 @@ class HealthResponse(BaseModel):
     status: str
     service: str
     version: str
+
+
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=2, description="关于工厂数据的自然语言问题（动态Text2SQL回答）",
+                          examples=["哪台设备未解决报警最多？", "现在有哪些设备？"])
 
 
 # ════════════════════════════════════════════════════════════
@@ -120,6 +127,44 @@ def get_work_orders(equipment_id: Optional[str] = None, status: Optional[str] = 
 def work_order_stats():
     """返回工单状态分布和设备分布统计。"""
     return {"result": action_tools.work_order_statistics()}
+
+
+@app.post("/diagnose_image", summary="拍照诊断（多模态）")
+async def diagnose_image(
+    file: UploadFile = File(..., description="设备/晶圆故障照片"),
+    equipment_id: Optional[str] = Form(None, description="设备编号；填了就接着跑完整诊断"),
+    note: str = Form("", description="补充说明，如'3号刻蚀机的晶圆'"),
+):
+    """上传故障照片 → 视觉Agent转成结构化观察；若给了设备号，再把观察接入诊断流水线
+    （结合数据库客观数据交叉印证）输出完整报告。"""
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="上传的图片为空。")
+    try:
+        observation = vision_agent.inspect_image(
+            image_bytes, file.content_type or "image/jpeg", note)
+    except Exception as e:
+        logger.error(f"视觉检测失败: {e}")
+        raise HTTPException(status_code=500, detail=f"视觉检测异常: {e}")
+
+    result = {"observation": observation}
+    if equipment_id:
+        if equipment_id not in settings.valid_equipment:
+            raise HTTPException(status_code=400, detail=f"设备编号 '{equipment_id}' 不存在。")
+        req = (f"{note}\n" if note else "") + f"（视觉检测观察）：{observation}"
+        try:
+            result["report"] = diagnose(req, equipment_id)
+        except Exception as e:
+            logger.error(f"图像诊断失败: {e}")
+            raise HTTPException(status_code=500, detail=f"诊断过程异常: {e}")
+    return result
+
+
+@app.post("/ask", summary="自然语言问数据（动态Text2SQL）")
+def ask(req: AskRequest):
+    """把没有现成工具覆盖的数据问题交给"工具设计师Agent"：
+    理解需求→设计只读查询工具→只读沙箱执行→中文作答。"""
+    return {"question": req.question, "answer": toolsmith.serve(req.question)}
 
 
 if __name__ == "__main__":

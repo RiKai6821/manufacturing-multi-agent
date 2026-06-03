@@ -33,6 +33,7 @@ from observability import Tracer
 from fact_checker import verify_report
 from memory import DiagnosisMemory, SessionMemory
 import executor_agents as ex
+import db_tools
 
 logger = get_logger(__name__)
 
@@ -336,7 +337,16 @@ def chat_session():
     print("   输入 quit 退出")
     print("=" * 70)
 
-    messages = [{"role": "system", "content": _CHAT_SYSTEM}]
+    # 启动时把真实设备名册注入系统提示，避免模型凭空编造设备清单（防幻觉）
+    sys_content = _CHAT_SYSTEM
+    try:
+        roster = db_tools.list_equipment()
+        sys_content += ("\n\n【当前真实设备名册（权威数据，回答设备清单/名称/工序类型时"
+                        "必须严格以此为准，绝不可编造或改名）】\n" + roster)
+    except Exception as e:
+        logger.warning(f"设备名册注入失败: {e}")
+
+    messages = [{"role": "system", "content": sys_content}]
     session = SessionMemory()   # 仅用于给本会话标个ID，便于记忆沉淀溯源
 
     while True:
@@ -369,10 +379,18 @@ def chat_session():
             "call_maintenance_agent": lambda task: pm_agent(task, tracer),
         }
 
+        # 工具名 → 可读专家名，用于展示"思考/计划"
+        _AGENT_LABEL = {
+            "call_data_agent": "数据分析Agent", "call_knowledge_agent": "知识检索Agent",
+            "call_action_agent": "行动执行Agent", "call_quality_agent": "质量评审Agent",
+            "call_maintenance_agent": "保养规划Agent",
+        }
+
         used_tools = False
         reply = "（已达最大处理步数，未能给出完整答复）"
         for _ in range(settings.max_steps_coordinator):
             messages = _compress_history(messages)
+            print("💭 小诊思考中…", flush=True)
             try:
                 resp = _llm_call(messages, _COORD_TOOLS)
             except Exception:
@@ -389,7 +407,14 @@ def chat_session():
             calls = [(tc.id, tc.function.name, json.loads(tc.function.arguments))
                      for tc in msg.tool_calls]
 
-            if len(calls) > 1:            # 并行调用
+            # ── 展示思考过程：模型前导说明 + 本轮决定调用哪些专家、各自任务 ──
+            if msg.content and msg.content.strip():
+                print(f"\n🧠 思路：{msg.content.strip()}")
+            print("🤔 小诊决定调用：")
+            for _id, _name, _args in calls:
+                print(f"   → {_AGENT_LABEL.get(_name, _name)}：{_args.get('task', '')}")
+
+            if len(calls) > 1:            #  并行调用
                 tracer.log("INFO", "助手", f"并行调用 {len(calls)} 个Agent",
                            "、".join(c[1] for c in calls))
                 with concurrent.futures.ThreadPoolExecutor(max_workers=len(calls)) as pool:

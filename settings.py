@@ -17,11 +17,16 @@ class Settings:
     now: datetime.datetime = datetime.datetime(2026, 6, 2, 10, 30)
 
     # ── 模型配置（模型路由：不同角色用不同模型，平衡速度/成本/质量）──
-    chat_model: str = "qwen-flash"    # 协调者：综合判断和最终报告（统一用 flash 省成本）
-    worker_model: str = "qwen-flash"  # 执行Agent：任务较简单（查数据/检索/建单），用快模型省时省钱
+    chat_model: str = "qwen-plus"     # 协调者：综合判断和最终报告，用强模型
+    worker_model: str = "qwen-flash"  # 执行Agent：任务较简单（查数据/检索/建单），用快模型（模型路由：强弱搭配省时省钱）
     embed_model: str = "text-embedding-v4"
     embed_dim: int = 1024
     temperature: float = 0.0          # 0 = 稳定可复现，调试首选
+
+    # ── 多模态 / 动态工具 ──
+    vision_model: str = "qwen-vl-max"   # 视觉理解模型（看故障照片）
+    sql_max_rows: int = 200             # Text2SQL 单次返回最大行数（防刷屏）
+    sql_timeout_seconds: int = 5        # SQL 执行超时秒数（防慢查询）
 
     # ── Agent 配置 ──
     max_steps_executor: int = 6       # 执行Agent最大循环步数

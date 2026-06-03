@@ -37,7 +37,7 @@ import executor_agents as ex
 
 client = OpenAI(api_key=os.getenv("DASHSCOPE_API_KEY"),
                 base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
-MODEL = settings.chat_model   # 统一走 settings（flash）
+MODEL = settings.chat_model   # 统一走 settings（协调者用 qwen-plus）
 
 # 全局执行日志（可观测性）
 EXECUTION_LOG = []

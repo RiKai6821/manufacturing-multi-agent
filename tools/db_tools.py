@@ -354,6 +354,30 @@ def query_alarm_statistics(equipment_id: str, days: int = 30) -> str:
 
 
 # ════════════════════════════════════════════════════════════
+# 工具8：设备清单（权威名册，回答"有哪些设备"用，杜绝编造）
+# ════════════════════════════════════════════════════════════
+
+def list_equipment() -> str:
+    """返回所有设备的真实清单（编号/名称/工序类型），来源于数据库 equipment 表。"""
+    logger.debug("list_equipment")
+    try:
+        with _get_conn() as conn:
+            rows = conn.execute(
+                "SELECT equipment_id, name, type, status FROM equipment ORDER BY equipment_id"
+            ).fetchall()
+    except sqlite3.OperationalError:
+        return "设备清单查询失败（错误码：DB-008），请联系系统管理员。"
+
+    if not rows:
+        return "未查到任何设备。"
+
+    lines = [f"全部设备（共 {len(rows)} 台）："]
+    for eid, name, typ, status in rows:
+        lines.append(f"  {eid}：{name}（{typ}工序，{status}）")
+    return "\n".join(lines)
+
+
+# ════════════════════════════════════════════════════════════
 # 本地自测
 # ════════════════════════════════════════════════════════════
 if __name__ == "__main__":

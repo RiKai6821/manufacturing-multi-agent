@@ -96,23 +96,26 @@
 Multi_Agent/
 ├── settings.py              # 配置中心（模型/RAG/重试/防幻觉等全局参数）
 ├── logger_config.py         # 统一结构化日志
-├── api_server.py            # FastAPI REST 服务（6接口 + Swagger）
+├── api_server.py            # FastAPI REST 服务（8接口 + Swagger，含拍照诊断/动态问数）
 ├── eval_agent.py            # ★ Agent级量化评估框架（任务完成率/响应时效）
 │
 ├── data/
 │   ├── build_database.py    # 构建模拟工厂库(8设备/488良率/1240参数/24报警/工单)
 │   └── knowledge/           # 企业知识库(SOP/历史案例/工艺/保养规范, 3362行)
 ├── tools/                   # 工具层（输入校验+异常隔离+错误码）
-│   ├── db_tools.py          # MES数据查询(7个工具)
+│   ├── db_tools.py          # MES数据查询(8个工具)
 │   ├── kb_tools.py          # RAG检索(FAISS, 置信度过滤+去重+缓存)
 │   ├── kb_tools_milvus.py   # RAG检索(Milvus生产级)
 │   ├── kb_tools_llamaindex.py # RAG检索(LlamaIndex框架版)
+│   ├── sql_sandbox.py       # ★ 只读SQL沙箱(Text2SQL安全底座，多层护栏)
 │   └── action_tools.py      # 工单(创建/查询/状态更新/统计)
 ├── agents/
-│   ├── main.py              # ★ 主程序(并行+记忆+防幻觉+可观测性)
-│   ├── coordinator.py       # 协调Agent(基础版)
+│   ├── main.py              # ★ 主程序(对话助手 + 并行+记忆+防幻觉+可观测性)
+│   ├── coordinator.py       # 协调Agent(遗留基础版)
 │   ├── coordinator_langchain.py # ★ LangChain/LangGraph框架版
 │   ├── executor_agents.py   # 5个执行Agent(重试+异常隔离)
+│   ├── toolsmith.py         # ★ 工具设计师Agent(理解需求→设计只读查询工具→执行)
+│   ├── vision_agent.py      # ★ 视觉检测Agent(多模态：看故障照片)
 │   ├── memory.py            # ★ 三层记忆管理
 │   ├── observability.py     # 可观测性(线程安全)
 │   ├── fact_checker.py      # 防幻觉事实校验
@@ -121,7 +124,7 @@ Multi_Agent/
 │   ├── generate_dataset.py  # 从知识库自动生成SFT数据集
 │   ├── sft_dataset.jsonl    # 百炼微调数据集(35样本)
 │   └── use_finetuned.py     # 微调前后对比脚本
-├── tests/                   # ★ 24个单元测试
+├── tests/                   # ★ 39个单元测试(含SQL沙箱安全测试)
 ├── k8s/                     # Kubernetes部署(deployment/service/hpa)
 ├── Dockerfile / docker-compose.yml
 └── docs/                    # 设计文档(框架对比/性能优化/演进设计)
@@ -136,11 +139,16 @@ pip install -r requirements.txt
 export DASHSCOPE_API_KEY=你的key        # Windows: $env:DASHSCOPE_API_KEY="你的key"
 
 cd data && python build_database.py && cd ..   # 构建数据库
-python agents/main.py                           # 运行多智能体诊断
+python agents/main.py                           # 对话助手(闲聊+按需诊断，默认)
+python agents/main.py --once                     # 跑一次固定案例诊断
 python eval_agent.py --quick                     # 运行评估框架
 python -m pytest                                 # 运行测试
 uvicorn api_server:app --port 8000              # 启动REST API → /docs
 ```
+
+REST 接口（共 8 个，详见 `/docs`）除诊断/查询/工单外，新增：
+- `POST /diagnose_image`：上传故障照片 → 视觉Agent转结构化观察 →（可选）接入诊断流水线
+- `POST /ask`：自然语言问数据 → 工具设计师Agent动态生成只读SQL作答
 
 详细部署（Docker/K8s）见 [DEPLOY.md](DEPLOY.md)。
 
@@ -174,7 +182,7 @@ uvicorn api_server:app --port 8000              # 启动REST API → /docs
 
 ### 工程质量
 ```
-24 单元测试通过(1.6s) + GitHub Actions CI 自动化
+39 单元测试通过 + GitHub Actions CI 自动化
 ```
 
 ---
