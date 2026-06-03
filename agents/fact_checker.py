@@ -17,8 +17,12 @@
 
 import sqlite3
 import os
+import sys
 import re
 import datetime
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from settings import settings
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "factory.db")
 
@@ -27,30 +31,34 @@ def get_ground_truth(equipment_id: str) -> dict:
     """从数据库取出该设备的权威事实，作为核对基准。"""
     conn = sqlite3.connect(DB_PATH)
     gt = {}
-    # 最新良率 与 前一批良率
-    rows = conn.execute("SELECT date,yield_rate FROM yield_records WHERE equipment_id=? ORDER BY date DESC LIMIT 7",
-                        (equipment_id,)).fetchall()
-    if rows:
-        gt["latest_yield"] = rows[0][1]
-        gt["week_ago_yield"] = rows[-1][1]
-        gt["yield_drop"] = round(rows[-1][1] - rows[0][1], 1)
-    # 颗粒计数（最新）
-    row = conn.execute("SELECT value FROM process_parameters WHERE equipment_id=? AND param_name LIKE '颗粒%' ORDER BY date DESC LIMIT 1",
-                       (equipment_id,)).fetchone()
-    if row:
-        gt["particle_count"] = row[0]
-    # 保养超期天数
-    row = conn.execute("SELECT next_maintenance FROM equipment WHERE equipment_id=?", (equipment_id,)).fetchone()
-    if row:
-        overdue = (datetime.date(2026, 6, 2) - datetime.date.fromisoformat(row[0])).days
-        gt["maintenance_overdue_days"] = overdue
-    conn.close()
+    try:
+        # 最新批次良率
+        row = conn.execute("SELECT yield_rate FROM yield_records WHERE equipment_id=? ORDER BY date DESC LIMIT 1",
+                           (equipment_id,)).fetchone()
+        if row:
+            gt["latest_yield"] = row[0]
+        # 颗粒计数（最新）
+        row = conn.execute("SELECT value FROM process_parameters WHERE equipment_id=? AND param_name LIKE '颗粒%' ORDER BY date DESC LIMIT 1",
+                           (equipment_id,)).fetchone()
+        if row:
+            gt["particle_count"] = row[0]
+        # 保养超期天数
+        row = conn.execute("SELECT next_maintenance FROM equipment WHERE equipment_id=?", (equipment_id,)).fetchone()
+        if row:
+            overdue = (settings.today - datetime.date.fromisoformat(row[0])).days
+            gt["maintenance_overdue_days"] = overdue
+    finally:
+        conn.close()
     return gt
 
 
 def _find_numbers(text):
-    """提取文本中所有数字（含小数）。"""
-    return [float(x) for x in re.findall(r"\d+\.?\d*", text)]
+    """提取文本中所有数字（含小数）。
+    先剔除日期、工单号/设备号/SOP编号等标识符里的数字，
+    避免这些与真实指标无关的数字造成巧合"命中"误判。"""
+    cleaned = re.sub(r"\d{4}-\d{2}-\d{2}", " ", text)              # 日期 2026-06-02
+    cleaned = re.sub(r"[A-Za-z]+-[A-Za-z]*-?\d+", " ", cleaned)    # WO-0011 / EQP-03 / SOP-ETCH-007
+    return [float(x) for x in re.findall(r"\d+\.?\d*", cleaned)]
 
 
 def verify_report(equipment_id: str, report: str) -> str:

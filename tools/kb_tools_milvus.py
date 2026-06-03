@@ -23,7 +23,12 @@
 """
 
 import os
+import sys
 import glob
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import config  # 自动加载 DASHSCOPE_API_KEY（从 .env / 环境变量）
+
 from openai import OpenAI
 from pymilvus import MilvusClient
 

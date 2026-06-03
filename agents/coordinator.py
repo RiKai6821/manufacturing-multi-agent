@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """
 ========================================================================
+⚠️ 遗留版本（DEPRECATED）—— 仅作阶段3教学/对照保留，请勿用于生产。
+   生产入口为 agents/main.py 的 diagnose()，它在此基础上补齐了：
+   LLM 重试、并行调用、History 压缩、记忆召回、防幻觉事后校验、可观测性。
+   本文件无重试/记忆/校验，功能已被 main.py 覆盖。
+========================================================================
 阶段 3 - 协调 Agent（系统大脑）+ 主程序
 ========================================================================
 协调 Agent 采用"协调者-执行者"架构：把三个执行 Agent 封装成它可调用的
@@ -25,13 +30,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import config  # 自动加载 DASHSCOPE_API_KEY
 import json
 from openai import OpenAI
+from settings import settings
 
 sys.path.append(os.path.dirname(__file__))
 import executor_agents as ex
 
 client = OpenAI(api_key=os.getenv("DASHSCOPE_API_KEY"),
                 base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
-MODEL = "qwen-plus"
+MODEL = settings.chat_model   # 统一走 settings（flash）
 
 # 全局执行日志（可观测性）
 EXECUTION_LOG = []

@@ -75,15 +75,31 @@ def _llm_call(messages, tools):
 # History 压缩：防止 context 溢出
 # ════════════════════════════════════════════════════════════
 
+def _role(m):
+    """兼容 dict 消息与 OpenAI 消息对象，统一取 role。"""
+    return m["role"] if isinstance(m, dict) else getattr(m, "role", None)
+
+
 def _compress_history(messages):
-    """保留 system + 首条user + 最近N轮交互，中间过长的工具结果用摘要替换。
-    协调者通常3~5轮就结束，这里是安全兜底，应对扩展为多轮交互的场景。"""
-    if len(messages) <= settings.max_tool_results_in_history * 2 + 2:
+    """保留 system + 首条user + 最近N轮交互，中间过长部分用摘要替换。
+    协调者通常3~5轮就结束，这里是安全兜底，应对扩展为多轮交互的场景。
+
+    关键：tool 消息必须紧跟其 assistant(tool_calls)。压缩后若尾部以"孤儿
+    tool 消息"开头，会触发 LLM API 400，故向后推进起点直到非 tool 消息，
+    保证 tool_calls 与其结果不被拆散。"""
+    keep = settings.max_tool_results_in_history * 2
+    if len(messages) <= keep + 2:
         return messages   # 不长，无需压缩
 
-    head = messages[:2]                                    # system + 首条user
-    tail = messages[-(settings.max_tool_results_in_history * 2):]  # 最近N轮
-    omitted = len(messages) - len(head) - len(tail)
+    head = messages[:2]              # system + 首条user
+    start = len(messages) - keep     # 尾部起点
+
+    # 边界对齐：跳过开头的孤儿 tool 消息，避免切断 tool_call 配对
+    while start < len(messages) and _role(messages[start]) == "tool":
+        start += 1
+
+    tail = messages[start:]
+    omitted = start - len(head)
     if omitted > 0:
         summary = {"role": "user",
                    "content": f"（系统提示：为节省上下文，已省略中间 {omitted} 条历史消息）"}

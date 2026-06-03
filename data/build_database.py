@@ -36,9 +36,13 @@ import os
 
 sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # Windows GBK 终端兼容
 
+# 复用全局基准日期，避免与 settings.today 漂移（settings 无 API Key 依赖，可安全导入）
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from settings import settings
+
 random.seed(42)
 DB_PATH = os.path.join(os.path.dirname(__file__), "factory.db")
-TODAY = datetime.date(2026, 6, 2)
+TODAY = settings.today   # 系统基准日期，统一从 settings 读取
 
 # ── 8台设备（EQP-03 是当前问题设备）──
 EQUIPMENT = [

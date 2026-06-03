@@ -22,7 +22,7 @@ from logger_config import get_logger
 logger = get_logger(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "factory.db")
-TODAY = datetime.date(2026, 6, 2)
+TODAY = settings.today   # 系统基准日期，统一从 settings 读取
 
 
 # ════════════════════════════════════════════════════════════
@@ -157,9 +157,15 @@ def query_process_parameters(equipment_id: str) -> str:
     logger.debug(f"query_process_parameters: {equipment_id}")
     try:
         with _get_conn() as conn:
+            # 取每个参数的最新一条记录：用相关子查询匹配该参数的最大日期，
+            # 显式且可移植（不依赖 SQLite "MAX()+bare column 取同行" 的特有行为）。
             rows = conn.execute(
-                "SELECT param_name, value, spec_lower, spec_upper, in_spec, MAX(date) "
-                "FROM process_parameters WHERE equipment_id=? GROUP BY param_name",
+                "SELECT p.param_name, p.value, p.spec_lower, p.spec_upper, p.in_spec, p.date "
+                "FROM process_parameters p "
+                "WHERE p.equipment_id=? AND p.date = ("
+                "    SELECT MAX(p2.date) FROM process_parameters p2 "
+                "    WHERE p2.equipment_id=p.equipment_id AND p2.param_name=p.param_name) "
+                "ORDER BY p.param_name",
                 (equipment_id,),
             ).fetchall()
     except sqlite3.OperationalError:
@@ -238,14 +244,15 @@ def query_cross_equipment_comparison(equipment_type: str, days: int = 7) -> str:
         return "错误：对比天数须在 1~30 之间。"
 
     logger.debug(f"query_cross_equipment_comparison: type={equipment_type}, days={days}")
+    cutoff = (TODAY - datetime.timedelta(days=days)).isoformat()
     try:
         with _get_conn() as conn:
             rows = conn.execute(
                 "SELECT e.equipment_id, e.name, AVG(y.yield_rate), MIN(y.yield_rate), COUNT(*) "
                 "FROM equipment e JOIN yield_records y ON e.equipment_id = y.equipment_id "
-                "WHERE e.type=? AND y.date >= date('2026-06-02', ? || ' days') "
+                "WHERE e.type=? AND y.date >= ? "
                 "GROUP BY e.equipment_id ORDER BY AVG(y.yield_rate) ASC",
-                (equipment_type, f"-{days}"),
+                (equipment_type, cutoff),
             ).fetchall()
     except sqlite3.OperationalError:
         return "数据库查询失败（错误码：DB-005），请联系系统管理员。"

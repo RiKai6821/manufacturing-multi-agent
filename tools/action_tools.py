@@ -14,7 +14,6 @@
 import sqlite3
 import os
 import sys
-import datetime
 from contextlib import contextmanager
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -24,7 +23,7 @@ from logger_config import get_logger
 logger = get_logger(__name__)
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "factory.db")
-NOW = datetime.datetime(2026, 6, 2, 10, 30)
+NOW = settings.now   # 系统基准时间，统一从 settings 读取
 
 VALID_STATUS = {"待处理", "处理中", "已完成", "已关闭"}
 

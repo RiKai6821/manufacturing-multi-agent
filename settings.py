@@ -3,14 +3,21 @@
 全局配置中心
 所有可调参数统一在这里管理，避免散落在各文件中。
 """
+import datetime
 from dataclasses import dataclass, field
 from typing import Set
 
 
 @dataclass
 class Settings:
+    # ── 系统基准日期（演示数据固定在此日）──
+    # 统一各模块的"今天"，避免 today/now 散落硬编码导致漂移。
+    # 接入真实生产时，改为 datetime.date.today() / datetime.datetime.now() 即可。
+    today: datetime.date = datetime.date(2026, 6, 2)
+    now: datetime.datetime = datetime.datetime(2026, 6, 2, 10, 30)
+
     # ── 模型配置（模型路由：不同角色用不同模型，平衡速度/成本/质量）──
-    chat_model: str = "qwen-plus"     # 协调者：负责综合判断和最终报告，用强模型
+    chat_model: str = "qwen-flash"    # 协调者：综合判断和最终报告（统一用 flash 省成本）
     worker_model: str = "qwen-flash"  # 执行Agent：任务较简单（查数据/检索/建单），用快模型省时省钱
     embed_model: str = "text-embedding-v4"
     embed_dim: int = 1024

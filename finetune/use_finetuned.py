@@ -18,6 +18,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import config  # 自动加载 DASHSCOPE_API_KEY
+from settings import settings
 from openai import OpenAI
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -25,7 +26,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 client = OpenAI(api_key=os.getenv("DASHSCOPE_API_KEY"),
                 base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
 
-BASE_MODEL = "qwen-plus"
+BASE_MODEL = settings.chat_model   # 统一走 settings（flash）
 # ↓↓↓ 微调完成后，把这里换成你的微调模型ID（形如 qwen-plus-ft-xxxxxxxx）↓↓↓
 FINETUNED_MODEL = None   # None 表示尚未微调，只跑基础模型
 
@@ -57,7 +58,7 @@ if __name__ == "__main__":
     print("测试症状：", TEST_CASE)
     print("=" * 70)
 
-    print("\n【基础模型 qwen-plus 的回答】\n")
+    print(f"\n【基础模型 {BASE_MODEL} 的回答】\n")
     print(ask(BASE_MODEL, TEST_CASE))
 
     if FINETUNED_MODEL:
