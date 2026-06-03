@@ -33,6 +33,12 @@ class Settings:
     max_steps_coordinator: int = 8    # 协调Agent最大循环步数
     executor_timeout: int = 120       # 单个执行Agent超时秒数
 
+    # ── 交互式 CLI 闲置退出 ──
+    # 用户多久不输入就自动结束会话（秒）；0 表示禁用（永远等用户输入 quit）。
+    # 真实生产是 Web/API 形态，该超时由服务端 session TTL 管理，此项仅作用于演示版 CLI。
+    idle_timeout_seconds: int = 300   # 默认 5 分钟无输入自动退出
+    idle_warn_seconds: int = 30       # 退出前多少秒先预警一次（0 或 >=timeout 则不预警）
+
     # ── RAG 配置 ──
     chunk_size: int = 200
     chunk_overlap: int = 50

@@ -41,20 +41,29 @@ def _strip_comments(sql: str) -> str:
     return sql
 
 
+def _strip_string_literals(sql: str) -> str:
+    """把单引号字符串字面量替换成空格（'' 转义引号一并处理）。
+    仅用于"危险词/多语句"扫描，不影响真正执行的原始 SQL。
+    目的：避免数据值里的普通词（如报警消息含 'delete'、描述含 'create'）
+    或字符串里的分号被误判为写操作/多语句——消除安全护栏的误杀。"""
+    return re.sub(r"'(?:[^']|'')*'", " ", sql)
+
+
 def validate(sql: str) -> tuple[bool, str]:
     """校验 SQL 是否为安全的单条只读查询。返回 (是否合法, 原因)。"""
     if not sql or not sql.strip():
         return False, "SQL 为空。"
-    clean = _strip_comments(sql).strip().rstrip(";").strip()
+    # 扫描前先剥注释、再剥字符串字面量，使关键词/分号检查只针对"真正的语句结构"
+    scan = _strip_string_literals(_strip_comments(sql)).strip().rstrip(";").strip()
 
     # 单语句：去掉尾分号后不应再含分号
-    if ";" in clean:
+    if ";" in scan:
         return False, "只允许单条语句，不得包含多条 SQL。"
     # 必须以 SELECT 或 WITH（CTE）开头
-    if not re.match(r"(?is)^\s*(select|with)\b", clean):
+    if not re.match(r"(?is)^\s*(select|with)\b", scan):
         return False, "只允许 SELECT / WITH 查询。"
-    # 危险关键词
-    m = _FORBIDDEN.search(clean)
+    # 危险关键词（此时字面量已剥离，命中即为语句结构里的真实写操作/DDL）
+    m = _FORBIDDEN.search(scan)
     if m:
         return False, f"检测到禁止的关键词：{m.group(0)}（只读沙箱不允许写操作/DDL）。"
     return True, "ok"

@@ -34,6 +34,17 @@ class TestValidate:
     def test_empty_blocked(self):
         assert not sql_sandbox.validate("   ")[0]
 
+    def test_keyword_inside_string_literal_allowed(self):
+        """字符串字面量里的危险词/分号不应被误杀（剥离字面量后再扫描）。"""
+        ok, _ = sql_sandbox.validate(
+            "SELECT * FROM alarms WHERE message LIKE '%delete; drop%'")
+        assert ok
+
+    def test_injection_outside_literal_still_blocked(self):
+        """真正语句结构里的写操作仍须拦截（确认剥离字面量没削弱护栏）。"""
+        assert not sql_sandbox.validate(
+            "SELECT name FROM equipment WHERE name='x'; DELETE FROM equipment")[0]
+
 
 class TestRunSelect:
     def test_real_query_returns_rows(self):

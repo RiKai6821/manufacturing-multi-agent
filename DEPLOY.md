@@ -77,6 +77,12 @@ minikube service diagnosis-api-service
 - liveness/readiness 探针实现健康检查与流量控制
 - Service 提供稳定的访问入口和负载均衡
 
+> ⚠️ **已知限制（诚实说明）**：当前每个 Pod 用各自的本地 SQLite——`factory.db`
+> 启动时自动重建（只读基线数据，各副本一致），但 `memory.db` 与新建工单是 **Pod 本地状态**，
+> 多副本/HPA 扩缩容时不共享、会分叉。因此本 K8s 方案演示的是"无状态服务"的高可用编排；
+> 真正多副本一致需把记忆/工单等有状态数据外置到共享数据库（PostgreSQL），让 Pod 无状态化。
+> 详见 [从原型到生产_演进设计.md](docs/从原型到生产_演进设计.md) 可靠性层。
+
 ---
 
 ## 演进路径总结

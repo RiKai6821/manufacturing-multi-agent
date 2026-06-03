@@ -64,19 +64,22 @@ def _truncate(text: str, max_len: int = None) -> str:
 # ════════════════════════════════════════════════════════════
 
 def query_yield_trend(equipment_id: str, days: int = 7) -> str:
-    """查询指定设备最近若干批次的良率记录及趋势。"""
+    """查询指定设备最近 days 个自然日内的良率记录及趋势。"""
     if err := _validate_equipment(equipment_id):
         return err
     if not 1 <= days <= 90:
         return "错误：查询天数须在 1~90 之间。"
 
     logger.debug(f"query_yield_trend: {equipment_id}, days={days}")
+    # 按"日期窗口"过滤而非 LIMIT 行数：让 days 真正表示天数，不依赖"每天恰好一批"的
+    # 数据密度假设（若某天多批/缺批也正确）。LIMIT 仅作兜底，防极端情况刷屏。
+    cutoff = (TODAY - datetime.timedelta(days=days - 1)).isoformat()
     try:
         with _get_conn() as conn:
             rows = conn.execute(
                 "SELECT date, lot_id, yield_rate FROM yield_records "
-                "WHERE equipment_id=? ORDER BY date DESC LIMIT ?",
-                (equipment_id, days),
+                "WHERE equipment_id=? AND date >= ? ORDER BY date DESC LIMIT 200",
+                (equipment_id, cutoff),
             ).fetchall()
     except sqlite3.OperationalError:
         return f"数据库查询失败（错误码：DB-001），请联系系统管理员。"

@@ -180,16 +180,18 @@ def _summarize(need: str, spec: dict, cols: list, rows: list) -> str:
 
 def serve(need: str, log=None) -> str:
     """一站式：把一个未被现有工具覆盖的数据需求，端到端处理掉。"""
+    # 注意：_summarize 的收尾 LLM 调用也必须在 try 内——它同样会因限流/网络
+    # 抖动抛异常，若漏到外面会向上冒泡中断整次 diagnose()/对话（协调层未隔离）。
     try:
         spec = design_tool(need, log=log)
         name = register_tool(spec)
         cols, rows = run_dynamic_tool(name, spec.get("call_args"), log=log)
+        return _summarize(need, spec, cols, rows)
     except ValueError as e:
         return f"（无法安全完成该查询：{e}）"
     except Exception as e:
         logger.error(f"toolsmith 处理失败: {e}")
         return f"（处理出错：{e}）"
-    return _summarize(need, spec, cols, rows)
 
 
 def toolsmith_agent(task: str, log=None) -> str:

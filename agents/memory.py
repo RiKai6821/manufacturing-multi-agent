@@ -26,6 +26,7 @@ Agent 的"记忆"分三层，本模块全部实现：
 """
 
 import os
+import re
 import sys
 import sqlite3
 import datetime
@@ -115,7 +116,7 @@ class DiagnosisMemory:
             conn.close()
 
     def _init_db(self):
-        """首次使用自动建表。"""
+        """首次使用自动建表；旧库缺 verified 列时自动补列（向后兼容）。"""
         with self._conn() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS diagnosis_records (
@@ -126,9 +127,14 @@ class DiagnosisMemory:
                     user_request TEXT,
                     root_cause TEXT,
                     keywords TEXT,
-                    report TEXT
+                    report TEXT,
+                    verified TEXT
                 )
             """)
+            # 旧库迁移：早期建的表没有 verified 列，补上（值形如 "3/3"，未知则 NULL）
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(diagnosis_records)")]
+            if "verified" not in cols:
+                conn.execute("ALTER TABLE diagnosis_records ADD COLUMN verified TEXT")
         logger.debug(f"记忆库就绪: {self.db_path}")
 
     # ── 抽取症状关键词（确定性，不额外调LLM）──
@@ -148,27 +154,29 @@ class DiagnosisMemory:
 
     # ── 保存一次诊断 ──
     def save(self, equipment_id: str, user_request: str, report: str,
-             session_id: str = "") -> int:
+             session_id: str = "", verified: str = None) -> int:
+        """verified：入库时的数字一致度（形如 "3/3"，来自 fact_checker），
+        供召回时标注该条历史"当年数字对得上数据库吗"，作可信度信号。None=未核对。"""
         keywords = self._extract_keywords(report)
         root_cause = self._extract_root_cause(report)
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with self._conn() as conn:
             cur = conn.execute(
                 "INSERT INTO diagnosis_records "
-                "(created_at, session_id, equipment_id, user_request, root_cause, keywords, report) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "(created_at, session_id, equipment_id, user_request, root_cause, keywords, report, verified) "
+                "VALUES (?,?,?,?,?,?,?,?)",
                 (now, session_id, equipment_id, user_request,
-                 root_cause, ",".join(keywords), report),
+                 root_cause, ",".join(keywords), report, verified),
             )
             rec_id = cur.lastrowid
-        logger.info(f"诊断已存入记忆库: REC-{rec_id:04d} ({equipment_id}, 关键词:{keywords})")
+        logger.info(f"诊断已存入记忆库: REC-{rec_id:04d} ({equipment_id}, 关键词:{keywords}, 一致度:{verified})")
         return rec_id
 
     # ── 召回：该设备的历史诊断 ──
     def recall_by_equipment(self, equipment_id: str, limit: int = 3) -> list:
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT created_at, root_cause, keywords FROM diagnosis_records "
+                "SELECT created_at, root_cause, keywords, verified FROM diagnosis_records "
                 "WHERE equipment_id=? ORDER BY id DESC LIMIT ?",
                 (equipment_id, limit),
             ).fetchall()
@@ -182,19 +190,49 @@ class DiagnosisMemory:
             return []
         with self._conn() as conn:
             rows = conn.execute(
-                "SELECT equipment_id, created_at, root_cause, keywords FROM diagnosis_records"
+                "SELECT equipment_id, created_at, root_cause, keywords, verified FROM diagnosis_records"
             ).fetchall()
 
         scored = []
-        for eid, created, root_cause, kw_str in rows:
+        for eid, created, root_cause, kw_str, verified in rows:
             if exclude_equipment and eid == exclude_equipment:
                 continue
             kws = set(kw_str.split(",")) if kw_str else set()
             overlap = len(target_kws & kws)
             if overlap > 0:
-                scored.append((overlap, eid, created, root_cause))
+                scored.append((overlap, eid, created, root_cause, verified))
         scored.sort(key=lambda x: -x[0])
         return scored[:limit]
+
+    # ── 召回脱敏：把历史根因里的具体数值/日期抹成占位符 ──
+    @staticmethod
+    def _strip_specifics(text: str) -> str:
+        """召回内容只保留"定性模式"，抹掉具体数字与日期。
+
+        关键防御：记忆是过往报告的沉淀，本身【未经强校验】，可能含旧值、
+        测试脏数据、甚至上一次的幻觉。若把这些具体数字/日期原样喂回模型，
+        极易被当成"本次事实"复述（例如把历史的"颗粒156"说成当前值，还自配日期）。
+        故召回一律去数值化——历史只用来提示"曾出现保养超期→颗粒污染"这类规律，
+        任何具体数字/时间必须由本次工具实时查得。"""
+        text = re.sub(r"\d{4}-\d{2}-\d{2}", "某日", text)        # ISO 日期
+        text = re.sub(r"\d+(?:\.\d+)?", "〔数值〕", text)         # 一切数字 → 占位符
+        return text
+
+    # ── 可信度标注：把入库时的一致度 "N/M" 转成给模型看的信任提示 ──
+    @staticmethod
+    def _trust_tag(verified: str) -> str:
+        """verified 形如 "3/3"。全一致→可信；有不一致→标注"低可信"；未知→提示未核对。"""
+        if not verified:
+            return "（当年未做数字核对，可信度未知）"
+        m = re.match(r"\s*(\d+)\s*/\s*(\d+)\s*", verified)
+        if not m:
+            return "（可信度未知）"
+        ok, total = int(m.group(1)), int(m.group(2))
+        if total == 0:
+            return "（无可核对数字）"
+        if ok == total:
+            return f"（当年数字核对 {verified} 全一致）"
+        return f"（⚠️当年数字核对仅 {verified} 一致，此条可信度低，定性参考即可）"
 
     # ── 生成召回提示文本（注入到协调者上下文）──
     def build_recall_prompt(self, equipment_id: str, symptom_text: str) -> str:
@@ -204,15 +242,19 @@ class DiagnosisMemory:
         if not same and not similar:
             return ""   # 无历史记忆，首次诊断该设备
 
-        lines = ["【记忆召回：以下是系统过往诊断经验，供参考，但仍须以本次实际数据为准】"]
+        sani = self._strip_specifics   # 召回内容去数值化，防旧值/脏数据被当成本次事实
+        lines = ["【记忆召回：以下为过往诊断经验，仅作「定性」参考。其中的具体数值与日期"
+                 "已隐去（显示为〔数值〕/某日）——任何数字、时间一律以本次工具实时返回为准，"
+                 "严禁照搬召回内容或据此臆测。】"]
         if same:
             lines.append(f"· 本设备（{equipment_id}）历史诊断：")
-            for created, root_cause, kws in same:
-                lines.append(f"    [{created}] {root_cause}")
+            for created, root_cause, kws, verified in same:
+                lines.append(f"    [{created[:10]}] {sani(root_cause)}{self._trust_tag(verified)}")
         if similar:
             lines.append("· 其他设备的相似症状案例：")
-            for overlap, eid, created, root_cause in similar:
-                lines.append(f"    [{eid} @ {created}] {root_cause}（{overlap}个症状吻合）")
+            for overlap, eid, created, root_cause, verified in similar:
+                lines.append(f"    [{eid}] {sani(root_cause)}（{overlap}个症状吻合）"
+                             f"{self._trust_tag(verified)}")
         return "\n".join(lines)
 
     # ── 统计 ──
@@ -235,6 +277,7 @@ class DiagnosisMemory:
 # 本地自测
 # ════════════════════════════════════════════════════════════
 if __name__ == "__main__":
+    import tempfile
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     print("【测试 1：会话记忆（多轮）】\n")
@@ -246,7 +289,11 @@ if __name__ == "__main__":
     print(sess.get_history_brief())
 
     print("\n【测试 2：诊断历史持久化】\n")
-    mem = DiagnosisMemory()
+    # 重要：自测用【临时库】，绝不写生产 memory.db——否则这些假数据会污染真实召回
+    # （曾导致把测试值"颗粒156"当成 EQP-02 历史事实复述）。tests/ 早已用临时库，这里对齐。
+    _tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    _tmp.close()
+    mem = DiagnosisMemory(db_path=_tmp.name)
     rec_id = mem.save(
         equipment_id="EQP-03",
         user_request="EQP-03良率掉到88%",
