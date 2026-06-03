@@ -1,0 +1,23 @@
+# ============================================================
+# HorizontalPodAutoscaler：按 CPU 负载自动扩缩容
+# 对应 JD「确保系统扩展性」—— 流量大时自动加 Pod，闲时自动减
+# 前置：集群需安装 metrics-server（minikube addons enable metrics-server）
+# ============================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: diagnosis-api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: diagnosis-api
+  minReplicas: 2          # 最少保持 2 个（高可用底线）
+  maxReplicas: 6          # 最多扩到 6 个
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70   # CPU 平均超 70% 就扩容

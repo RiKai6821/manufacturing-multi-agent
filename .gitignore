@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+env/
+
+# 项目生成的数据/缓存（运行脚本会重新生成）
+*.db
+*.pkl
+last_trace.json
+eval_report.json
+agent_run.log
+milvus_kb.db
+factory.db
+memory.db
+.pytest_cache/
+
+# 环境变量与密钥（重要：避免泄露 API Key）
+.env
+*.key
+config_local.py
+
+# 编辑器/系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,24 @@
+# 构建镜像时排除这些，保持镜像精简
+__pycache__/
+*.pyc
+*.pyo
+
+# 本地生成的缓存和数据库（镜像内会重新构建/生成）
+*.pkl
+data/factory.db
+data/memory.db
+tools/milvus_kb.db
+
+# 虚拟环境（绝不进镜像）
+venv/
+.venv/
+
+# 运行产物
+last_trace.json
+agent_run.log
+
+# 开发文件
+.git/
+.idea/
+.vscode/
+*.md

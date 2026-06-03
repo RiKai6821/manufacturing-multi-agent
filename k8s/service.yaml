@@ -1,0 +1,18 @@
+# ============================================================
+# Service：为 Deployment 的多个 Pod 提供统一访问入口 + 负载均衡
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: diagnosis-api-service
+  labels:
+    app: diagnosis-api
+spec:
+  type: NodePort          # 本地 minikube 用 NodePort 暴露；云上可改 LoadBalancer
+  selector:
+    app: diagnosis-api    # 把流量路由到带此标签的所有 Pod（自动负载均衡）
+  ports:
+    - protocol: TCP
+      port: 80            # Service 对外端口
+      targetPort: 8000    # 转发到容器端口
+      nodePort: 30080     # 节点暴露端口（30000~32767）

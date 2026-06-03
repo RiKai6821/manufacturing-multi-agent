@@ -1,0 +1,58 @@
+# ============================================================
+# Deployment：管理诊断服务的 Pod 副本
+# 对应 JD「云原生部署、确保系统高可用与扩展性」
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: diagnosis-api
+  labels:
+    app: diagnosis-api
+spec:
+  # 副本数：2 个实例，单个挂掉另一个继续服务（高可用）
+  # 流量增大时可改大此值或配合 HPA 自动扩缩容
+  replicas: 2
+  selector:
+    matchLabels:
+      app: diagnosis-api
+  template:
+    metadata:
+      labels:
+        app: diagnosis-api
+    spec:
+      containers:
+        - name: diagnosis-api
+          image: multi-agent-diagnosis:2.0
+          imagePullPolicy: IfNotPresent   # 本地 minikube 用本地镜像
+          ports:
+            - containerPort: 8000
+          env:
+            # API Key 从 Secret 注入，不明文写进 manifest
+            - name: DASHSCOPE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dashscope-secret
+                  key: api-key
+          # 资源限制：防止单 Pod 占满节点资源
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          # ── 存活探针：失败则重启容器（自愈）──
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 3
+          # ── 就绪探针：未就绪则不接收流量（平滑上线）──
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10

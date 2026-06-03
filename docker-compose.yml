@@ -1,0 +1,28 @@
+# ============================================================
+# 多智能体诊断系统 - 服务编排
+# 用法：
+#   1. 在本目录创建 .env 文件，写入：DASHSCOPE_API_KEY=你的key
+#   2. docker compose up --build
+#   3. 浏览器打开 http://localhost:8000/docs
+# ============================================================
+services:
+  diagnosis-api:
+    build: .
+    image: multi-agent-diagnosis:2.0
+    container_name: diagnosis-api
+    ports:
+      - "8000:8000"
+    environment:
+      # 从宿主机环境变量或同目录 .env 文件读取，不硬编码到镜像
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY}
+    volumes:
+      # 持久化 Agent 记忆库和数据，容器重启不丢失诊断历史
+      - ./data:/app/data
+    restart: unless-stopped
+    # 健康检查：编排平台据此判断服务是否就绪（对应"高可用"）
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

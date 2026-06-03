@@ -1,0 +1,20 @@
+# 大模型调用（OpenAI 兼容接口，对接阿里云百炼 Qwen）
+openai>=1.40.0
+# 向量检索 - 原型版
+faiss-cpu>=1.8.0
+numpy>=1.26.0
+# 向量检索 - 生产级版（Milvus）
+pymilvus>=2.4.0
+milvus-lite>=2.4.0
+# 阿里云百炼 SDK（rerank 等能力，可选）
+dashscope>=1.20.0
+# REST API 服务（系统集成/对外接口）
+fastapi>=0.110.0
+uvicorn>=0.27.0
+# 框架版实现（对照手写版）
+langchain>=1.0.0
+langgraph>=0.2.0
+langchain-openai>=0.2.0
+llama-index-core>=0.11.0
+# 测试
+pytest>=8.0.0
